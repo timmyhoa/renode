@@ -22,3 +22,4 @@ packages
 #verilator trace files
 *.vcd
 
+tools/packaging/renode-1.14.0-1.x86_64.rpm
