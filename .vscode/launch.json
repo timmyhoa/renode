@@ -10,7 +10,18 @@
             "type": "mono",
             "request": "launch",
             "program": "${workspaceRoot}/output/bin/Debug/Renode.exe",
-            "cwd": "${workspaceRoot}",
+            //"cwd": "${workspaceRoot}",
+            "cwd": "/home/timmyhoa/Documents/Code/MRT/MRT-renode",
+            "args": ["script.resc"]
+        },
+        {
+            "name": "Launch - No build - Debug",
+            "type": "mono",
+            "request": "launch",
+            "program": "${workspaceRoot}/output/bin/Debug/Renode.exe",
+            //"cwd": "${workspaceRoot}",
+            "cwd": "/home/timmyhoa/Documents/Code/MRT/MRT-renode",
+            "args": ["script.resc"]
         },
         {
             "name": "Launch - Release",
