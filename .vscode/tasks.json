@@ -26,11 +26,11 @@
             }
         },
         {
-            "label": "Build Package - Release",
+            "label": "[MRT] Build",
             "problemMatcher": "$msCompile",
             "type": "shell",
             //MRT will only create .deb package to save time
-            "command": "./MRT_build.sh -p",
+            "command": "./MRT_build.sh",
             "group": {
                 "kind": "build",
                 "isDefault": true

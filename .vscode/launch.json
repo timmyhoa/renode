@@ -11,7 +11,7 @@
             "request": "launch",
             "program": "${workspaceRoot}/output/bin/Debug/Renode.exe",
             //"cwd": "${workspaceRoot}",
-            "cwd": "/home/timmyhoa/Documents/Code/MRT/MRT-renode",
+            "cwd": "/home/timmyhoa/Documents/Code/fc2/megaloop_2024/renode",
             "args": ["script.resc"]
         },
         {
@@ -20,7 +20,7 @@
             "request": "launch",
             "program": "${workspaceRoot}/output/bin/Debug/Renode.exe",
             //"cwd": "${workspaceRoot}",
-            "cwd": "/home/timmyhoa/Documents/Code/MRT/MRT-renode",
+            "cwd": "/home/timmyhoa/Documents/Code/fc2/megaloop_2024/renode",
             "args": ["script.resc"]
         },
         {
