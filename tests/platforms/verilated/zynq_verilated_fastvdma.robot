@@ -6,9 +6,15 @@ ${SCRIPT}                                ${CURDIR}/../../../scripts/single-node/
 ${UART}                                  sysbus.uart1
 ${FASTVDMA_DRIVER}                       /lib/modules/5.10.0-xilinx/kernel/drivers/dma/fastvdma/fastvdma.ko
 ${FASTVDMA_DEMO_DRIVER}                  /lib/modules/5.10.0-xilinx/kernel/drivers/dma/fastvdma/fastvdma-demo.ko
+${FASTVDMA_NATIVE_LINUX}                 ${URI}zynq-fastvdma_libVfastvdma-Linux-x86_64-1246779523.so-s_2057616-93e755f7d67bc4d5ca33cce6c88bbe8ea8b3bd31
+${FASTVDMA_NATIVE_WINDOWS}               ${URI}zynq-fastvdma_libVfastvdma-Windows-x86_64-1246779523.dll-s_14839852-62f85c68c37d34f17b10d39c5861780856d1698e
+${FASTVDMA_NATIVE_MACOS}                 ${URI}libVfastvdma-macOS-x86_64-1246779523.dylib-s_230304-6c7a97c3b3adddf60bfb769e751403e85092c3b8
 
 *** Keywords ***
 Create Machine
+    Execute Command                      \$dmaLinux?=${FASTVDMA_NATIVE_LINUX}
+    Execute Command                      \$dmaWindows?=${FASTVDMA_NATIVE_WINDOWS}
+    Execute Command                      \$dmaMacOS?=${FASTVDMA_NATIVE_MACOS}
     Execute Script                       ${SCRIPT}
     Create Terminal Tester               ${UART}
 
@@ -69,8 +75,6 @@ Should Load Drivers
 
 Verify Image
     [Documentation]                      Verifies whether the image has been transferred correctly.
-# On CI we observed deadlocks when targeting dotnet, skip this test until it's resolved
-    [Tags]                               skip_dotnet
     Requires                             output
 
 # The output image (out.rgba) should consist of img1.rgba (256x256px) in the middle of img0.rgba (512x512px)

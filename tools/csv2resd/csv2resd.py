@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # Copyright (c) 2010-2023 Antmicro
 #
@@ -9,7 +9,7 @@
 import argparse
 import sys
 from dataclasses import dataclass
-from typing import Optional
+from typing import List, Optional
 import csv
 import resd
 
@@ -19,8 +19,8 @@ from grammar import SAMPLE_TYPE, BLOCK_TYPE
 @dataclass
 class Mapping:
     sample_type: SAMPLE_TYPE
-    map_from: list[str]
-    map_to: Optional[list[str]]
+    map_from: List[str]
+    map_to: Optional[List[str]]
     channel: int
 
     def remap(self, row):
@@ -189,3 +189,5 @@ if __name__ == '__main__':
                 block.frequency = group.frequency
             if group.start_time is not None:
                 block.start_time = group.start_time
+
+        resd_file.flush()

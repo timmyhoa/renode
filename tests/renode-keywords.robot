@@ -13,6 +13,7 @@ ${SKIP_RUNNING_SERVER}       False
 ${CONFIGURATION}             Release
 ${PORT_NUMBER}               9999
 ${DIRECTORY}                 ${CURDIR}/../output/bin/${CONFIGURATION}
+${RENODETOOLS}               ${CURDIR}/../tools
 ${BINARY_NAME}               Renode.exe
 ${HOTSPOT_ACTION}            None
 ${DISABLE_XWT}               False
@@ -121,7 +122,8 @@ Sanitize Test Name
 Create Snapshot Of Failed Test
     Return From Keyword If   'skipped' in @{TEST TAGS}
 
-    ${test_name}=      Set Variable  ${SUITE NAME}.${TEST NAME}.fail.save
+    ${retry_index}=    Get Variable Value   \${RETRYFAILED_RETRY_INDEX}  0
+    ${test_name}=      Set Variable  ${SUITE NAME}.${TEST NAME}.fail${retry_index}.save
     ${test_name}=      Sanitize Test Name  ${test_name}
 
     ${snapshots_dir}=  Set Variable  ${RESULTS_DIRECTORY}/snapshots
@@ -134,7 +136,8 @@ Create Snapshot Of Failed Test
 Save Test Log
     Return From Keyword If   'skipped' in @{TEST TAGS}
 
-    ${test_name}=      Set Variable  ${SUITE NAME}.${TEST NAME}
+    ${retry_index}=    Get Variable Value   \${RETRYFAILED_RETRY_INDEX}  0
+    ${test_name}=      Set Variable  ${SUITE NAME}.${TEST NAME}.fail${retry_index}
     ${test_name}=      Sanitize Test Name  ${test_name}
 
     ${logs_dir}=       Set Variable  ${RESULTS_DIRECTORY}/logs

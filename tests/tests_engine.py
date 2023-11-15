@@ -1,5 +1,6 @@
 # pylint: disable=C0301,C0103,C0111
 from __future__ import print_function
+from collections import defaultdict, namedtuple
 from sys import platform
 import os
 import sys
@@ -10,6 +11,7 @@ import multiprocessing
 
 this_path = os.path.abspath(os.path.dirname(__file__))
 registered_handlers = []
+TestResult = namedtuple('TestResult', ('ok', 'log_file'))
 
 
 class IncludeLoader(yaml.SafeLoader):
@@ -44,30 +46,40 @@ IncludeLoader.add_constructor('!include', IncludeLoader.include)
 
 
 def prepare_parser():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        epilog="""The -n/--repeat and -N/--retry options are not mutually exclusive.
+        For example, "-n2 -N5" would repeat twice running the test(s) with a "tolerance"
+        of up to 4 failures each. This means each test case would run from 2 to 10 times."""
+    )
 
     parser.add_argument("tests",
-                        help="List of test files",
+                        help="List of test files.",
                         nargs='*')
 
     parser.add_argument("-f", "--fixture",
                         dest="fixture",
-                        help="Fixture to test",
+                        help="Fixture to test.",
                         metavar="FIXTURE")
 
     parser.add_argument("-n", "--repeat",
-                        dest="repeat_count",
+                        dest="iteration_count",
                         nargs="?",
                         type=int,
                         const=0,
                         default=1,
-                        help="Repeat tests a number of times (no-flag: 1, no-value: infinite)")
+                        help="Repeat tests a number of times (no-flag: 1, no-value: infinite).")
+
+    parser.add_argument("-N", "--retry",
+                        dest="retry_count",
+                        type=int,
+                        default=1,
+                        help="Run tests up to a number of times (like -n, but stops on success; must be >0)")
 
     parser.add_argument("-d", "--debug",
                         dest="debug_mode",
                         action="store_true",
                         default=False,
-                        help="Debug mode")
+                        help="Debug mode.")
 
     parser.add_argument("-o", "--output",
                         dest="output_file",
@@ -91,7 +103,7 @@ def prepare_parser():
                         dest="test_type",
                         action="store",
                         default="all",
-                        help="Type of test to execute (all by default)")
+                        help="Type of test to execute (all by default).")
 
     parser.add_argument("-r", "--results-dir",
                         dest="results_directory",
@@ -119,19 +131,19 @@ def prepare_parser():
                         dest="stop_on_error",
                         action="store_true",
                         default=False,
-                        help="Terminate immediately on the first test failure")
+                        help="Terminate immediately on the first test failure.")
 
     parser.add_argument("-j", "--jobs",
                         dest="jobs",
                         action="store",
                         default=1,
                         type=int,
-                        help="Maximum number of parallel tests")
+                        help="Maximum number of parallel tests.")
     parser.add_argument("--keep-temporary-files",
                         dest="keep_temps",
                         action="store_true",
                         default=False,
-                        help="Don't clean temporary files on exit")
+                        help="Don't clean temporary files on exit.")
 
     parser.add_argument("--save-logs",
                         choices=("onfail", "always"),
@@ -271,38 +283,61 @@ def run_test_group(args):
 
     group, options, test_id = args
 
-    repeat_counter = 0
+    iteration_counter = 0
     tests_failed = False
+    log_files = set()
 
     # this function will be called in a separate
     # context (due to the pool.map_async) and
     # needs the stdout to be reconfigured
     configure_output(options)
 
-    while options.repeat_count == 0 or repeat_counter < options.repeat_count:
-        repeat_counter += 1
+    while options.iteration_count == 0 or iteration_counter < options.iteration_count:
+        iteration_counter += 1
 
-        if options.repeat_count > 1:
-            print("Running tests iteration {} of {}...".format(repeat_counter, options.repeat_count))
-        elif options.repeat_count == 0:
-            print("Running tests iteration {}...".format(repeat_counter))
+        if options.iteration_count > 1:
+            print("Running tests iteration {} of {}...".format(iteration_counter, options.iteration_count))
+        elif options.iteration_count == 0:
+            print("Running tests iteration {}...".format(iteration_counter))
 
         for suite in group:
-            if not suite.run(options, run_id=test_id if options.jobs != 1 else 0):
-                tests_failed = True
+            retry_suites_counter = 0
+            should_retry_suite = True
+            while should_retry_suite and retry_suites_counter < options.retry_count:
+                retry_suites_counter += 1
+
+                if retry_suites_counter > 1:
+                    print("Retrying suite, attempt {} of {}...".format(retry_suites_counter, options.retry_count))
+
+                # we need to collect log files here instead of appending to a global list
+                # in each suite runner because this function will be called in a multiprocessing
+                # context when using the --jobs argument, as mentioned above
+                ok, suite_log_files = suite.run(options,
+                                                run_id=test_id if options.jobs != 1 else 0,
+                                                iteration_index=iteration_counter,
+                                                suite_retry_index=retry_suites_counter - 1)
+                log_files.update((type(suite), log_file) for log_file in suite_log_files)
+                if ok:
+                    tests_failed = False
+                    should_retry_suite = False
+                else:
+                    tests_failed = True
+                    should_retry_suite = suite.should_retry_suite(options, iteration_counter, retry_suites_counter - 1)
+                    if options.retry_count > 1 and not should_retry_suite:
+                        print("No Robot<->Renode connection issues were detected to warrant a suite retry - giving up.")
 
         if options.stop_on_error and tests_failed:
             break
 
     options.output.flush()
-    return tests_failed
+    return (tests_failed, log_files)
 
 def print_failed_tests(options):
     for handler in registered_handlers:
         handler_obj = handler['creator']
         failed = handler_obj.find_failed_tests(options.results_directory)
 
-        if failed != None:
+        if failed is not None:
             def _print_helper(what):
                 for i, fail in enumerate(failed[what]):
                     print("\t{0}. {1}".format(i + 1, fail))
@@ -313,6 +348,59 @@ def print_failed_tests(options):
                 print("Failed {} non-critical tests:".format(handler['type']))
                 _print_helper('non_critical')
             print("------")
+
+def print_rerun_trace(options):
+    for handler in registered_handlers:
+        handler_obj = handler["creator"]
+        reruns = handler_obj.find_rerun_tests(options.results_directory)
+        if not reruns:
+            continue
+
+        did_retry = False
+        if options.retry_count != 1:
+            for trace in reruns.values():
+                test_case_retry_occurred = any([x["nth"] > 1 for x in trace])
+                suite_retry_occurred = any([x["label"].endswith("retry1") for x in trace])
+                if test_case_retry_occurred or suite_retry_occurred:
+                    did_retry = True
+                    break
+        if options.iteration_count == 1 and not did_retry:
+            return
+        elif options.iteration_count == 1 and did_retry:
+            print("Some tests were retried:")
+        elif options.iteration_count != 1 and not did_retry:
+            print(f"Ran {options.iteration_count} iterations:")
+        elif options.iteration_count != 1 and did_retry:
+            print(f"Ran {options.iteration_count} iterations, some tests were retried:")
+
+        trace_index = 0
+        for test, trace in reruns.items():
+            n_runs = sum([x["nth"] for x in trace])
+            has_failed = not all(x["nth"] == 1 and x["status"] == "PASS" for x in trace)
+            if n_runs == 1 or not has_failed:
+                # Don't mention tests that were run only once or that never
+                # failed. It CAN happen that n_runs > 1 and has_failed == False;
+                # when another test in the same suite triggers a suite retry.
+                continue
+            trace_index += 1
+            print(f"\t{trace_index}. {test} was started {n_runs} times:")
+            iteration_index = 1
+            suite_retry_index = 0
+            for i, trace_entry in enumerate(trace, 1):
+                label, status, nth, tags, crash = trace_entry.values()
+                print("\t     {}:  {} {:<9} {}{}{}".format(
+                    label, nth,
+                    "attempt," if nth == 1 else "attempts,",
+                    status,
+                    f" [{', '.join(tags)}]" if tags else "",
+                    " (crash detected)" if crash else "",
+                ))
+                if label == "iteration":
+                    iteration_index += 1
+                else:
+                    suite_retry_index += 1
+        print("------")
+
 
 def run():
     parser = prepare_parser()
@@ -359,19 +447,23 @@ def run():
     options.output = None
 
     if options.jobs == 1:
-        tests_failed = False
-        for a in args:
-            tests_failed |= run_test_group(a)
+        tests_failed, logs = zip(*map(run_test_group, args))
     else:
         multiprocessing.set_start_method("spawn")
         pool = multiprocessing.Pool(processes=options.jobs)
         # this get is a hack - see: https://stackoverflow.com/a/1408476/980025
         # we use `async` + `get` in order to allow "Ctrl+C" to be handled correctly;
         # otherwise it would not be possible to abort tests in progress
-        tests_failed = any(pool.map_async(run_test_group, args).get(999999))
+        tests_failed, logs = zip(*pool.map_async(run_test_group, args).get(999999))
         pool.close()
         print("Waiting for all processes to exit")
         pool.join()
+
+    tests_failed = any(tests_failed)
+    logs = set().union(*logs)
+    logs_per_type = defaultdict(lambda: [])
+    for suite_type, log in logs:
+        logs_per_type[suite_type].append(log)
 
     configure_output(options)
 
@@ -379,6 +471,7 @@ def run():
 
     for group in options.tests:
         for suite in options.tests[group]:
+            type(suite).log_files = logs_per_type[type(suite)]
             suite.cleanup(options)
 
     options.output.flush()
@@ -388,5 +481,7 @@ def run():
     if tests_failed:
         print("Some tests failed :( See the list of failed tests below and logs for details!")
         print_failed_tests(options)
+        print_rerun_trace(options)
         sys.exit(1)
     print("Tests finished successfully :)")
+    print_rerun_trace(options)
